@@ -1,0 +1,15 @@
+---
+- name: "Ensure Slurm group exists with gid {{ slurm_gid }}"
+  ansible.builtin.group:
+    name: "slurm"
+    state: present
+    gid: "{{ slurm_gid }}"
+  become: true
+
+- name: "Create slurm user with uid {{ slurm_uid }}"
+  ansible.builtin.user:
+    name: "slurm"
+    comment: "SLURM workload manager"
+    uid: "{{ slurm_uid }}"
+    group: slurm
+  become: true

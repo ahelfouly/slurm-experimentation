@@ -1,0 +1,40 @@
+---
+# vars file for slurm
+slurm_home: "/home/{{ ansible_user }}"
+
+slurm_munge_url: "https://github.com/dun/munge/releases/download/munge-{{ slurm_munge_version }}/munge-{{ slurm_munge_version }}.tar.xz"
+slurm_package_url: "https://download.schedmd.com/slurm/slurm-{{ slurm_package_version }}.tar.bz2"
+
+slurm_allowed_distros:
+    rocky:
+        - "9"
+
+slurm_rpm_dependencies:
+    - "rpm-build"
+    - "bzip2-devel"
+    - "rpmdevtools"
+    - "dbus-devel"
+    - "openssh"
+slurm_build_dependencies:
+    - "mariadb-devel"
+    - "pam-devel"
+    - "perl-devel"
+    - "readline-devel"
+    - "perl-ExtUtils-MakeMaker"
+    - "dbus-devel"
+
+slurm_common_directories:
+    - "/var/log/slurm"
+    - "/etc/slurm"
+slurm_controller_directories:
+    - "/var/spool/slurmctld"
+slurm_compute_directories:
+    - "/var/spool/slurmd"
+
+slurm_controller_packages:
+    - "perlapi"
+    - "slurmctld"
+
+slurm_compute_packages:
+    - "perlapi"
+    - "slurmd"

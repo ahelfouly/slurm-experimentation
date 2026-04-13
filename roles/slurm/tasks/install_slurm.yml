@@ -1,0 +1,186 @@
+---
+- name: Add SLURM cluster hosts entries
+  ansible.builtin.blockinfile:
+    path: /etc/hosts
+    marker: "# {mark} SLURM CLUSTER HOSTS"
+    block: |
+      {% for host in groups['slurm_all'] %}
+      {{ hostvars[host]['ansible_host'] }} {{ hostvars[host]['ansible_hostname'] }} {{ hostvars[host]['ansible_fqdn'] }}
+      {% endfor %}
+  become: true
+
+- name: "Download slurm package on controller"
+  ansible.builtin.get_url:
+    url: "{{ slurm_package_url }}"
+    dest: "~/slurm-{{ slurm_package_version }}.tar.bz2"
+    mode: "0600"
+  delegate_to: localhost
+
+- name: "Copy package to nodes"
+  ansible.builtin.copy:
+    src: "~/slurm-{{ slurm_package_version }}.tar.bz2"
+    dest: "{{ slurm_home }}/slurm-{{ slurm_package_version }}.tar.bz2"
+    mode: "0600"
+
+- name: "Install rpm build packages"
+  ansible.builtin.dnf:
+    name: "{{ slurm_build_dependencies }}"
+    enablerepo:
+      - "crb"
+  become: true
+
+- name: "Check if slurm RPM already built"
+  ansible.builtin.find:
+    paths: "{{ ansible_env.HOME }}/rpmbuild/RPMS"
+    patterns: "slurm-{{ slurm_package_version }}*.rpm"
+    recurse: true
+  register: slurm_rpms
+
+- name: "Build slurm package"
+  ansible.builtin.command:
+    cmd: "rpmbuild -tb --without=check {{ slurm_home }}/slurm-{{ slurm_package_version }}.tar.bz2"
+  register: slurm_build
+  changed_when: false
+  when: slurm_rpms.files | length == 0
+
+- name: "Create common directories"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: "slurm"
+    group: "slurm"
+    state: "directory"
+    mode: "0755"
+  become: true
+  loop: "{{ slurm_common_directories }}"
+
+- name: "Create controller node directories"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: "slurm"
+    group: "slurm"
+    state: "directory"
+    mode: "0755"
+  loop: "{{ slurm_controller_directories }}"
+  when: inventory_hostname in groups['slurm_controller']
+  become: true
+
+- name: "Create compute node directories"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: "slurm"
+    group: "slurm"
+    state: "directory"
+    mode: "0755"
+  loop: "{{ slurm_compute_directories }}"
+  when: inventory_hostname in groups['slurm_compute']
+  become: true
+
+- name: "Find slurm lib RPMs"
+  ansible.builtin.find:
+    paths: "{{ ansible_env.HOME }}/rpmbuild/RPMS/{{ ansible_architecture }}"
+    patterns: "^slurm-{{ slurm_package_version }}-\\d+\\.el\\d+(_\\d+)?\\.{{ ansible_architecture }}\\.rpm$"
+    use_regex: true
+  register: slurm_lib_rpms
+
+- name: "Find slurm controller RPMs"
+  ansible.builtin.find:
+    paths: "{{ ansible_env.HOME }}/rpmbuild/RPMS/{{ ansible_architecture }}"
+    patterns: "^slurm-(perlapi|slurmctld)-{{ slurm_package_version }}-\\d+\\.el\\d+(_\\d+)?\\.{{ ansible_architecture }}\\.rpm$"
+    use_regex: true
+  register: slurm_controller_rpms
+  when: inventory_hostname in groups['slurm_controller']
+
+- name: "Find slurm compute RPMs"
+  ansible.builtin.find:
+    paths: "{{ ansible_env.HOME }}/rpmbuild/RPMS/{{ ansible_architecture }}"
+    patterns: "^slurm-(perlapi|slurmd)-{{ slurm_package_version }}-\\d+\\.el\\d+(_\\d+)?\\.{{ ansible_architecture }}\\.rpm$"
+    use_regex: true
+  register: slurm_compute_rpms
+  when: inventory_hostname in groups['slurm_compute']
+
+- name: "Install slurm libs"
+  ansible.builtin.dnf:
+    name: "{{ slurm_lib_rpms.files | map(attribute='path') | list }}"
+    state: latest
+    disable_gpg_check: true
+  
+  become: true
+
+- name: "Install slurm controller specific packages"
+  ansible.builtin.dnf:
+    name: "{{ slurm_controller_rpms.files | map(attribute='path') | list }}"
+    state: present
+    disable_gpg_check: true
+  when: inventory_hostname in groups['slurm_controller']
+
+  become: true
+
+- name: "Install slurm compute specific packages"
+  ansible.builtin.dnf:
+    name: "{{ slurm_compute_rpms.files | map(attribute='path') | list }}"
+    state: present
+    disable_gpg_check: true
+  when: inventory_hostname in groups['slurm_compute']
+  become: true
+
+
+- name: "Get slurm hardware config"
+  ansible.builtin.command:
+    cmd: "/usr/sbin/slurmd -C"
+  become: true
+  register: slurm_slurmd_output
+  changed_when: false
+  when: inventory_hostname in groups['slurm_compute']
+
+- name: "Set slurm hardware fact"
+  ansible.builtin.set_fact:
+    slurm_hardware: "{{ slurm_slurmd_output.stdout_lines[0] }}"
+  when: inventory_hostname in groups['slurm_compute']
+
+- name: "Copy slurm.conf to cluster"
+  ansible.builtin.template:
+    src: slurm.conf.j2
+    dest: "/etc/slurm/slurm.conf"
+    owner: slurm
+    group: slurm
+    mode: "0600"
+  become: true
+
+- name: "Add cgroup.conf compute nodes"
+  ansible.builtin.lineinfile:
+    line: "CgroupPlugin=autodetect"
+    dest: "/etc/slurm/cgroup.conf"
+    owner: slurm
+    group: slurm
+    mode: "0600"
+    create: true
+  become: true
+  when: inventory_hostname in groups['slurm_compute']
+
+- name: Open Slurm ports
+  ansible.posix.firewalld:
+    port: "{{ item }}"
+    permanent: true
+    state: enabled
+    immediate: true
+  loop:
+    - 6817/tcp
+    - 6818/tcp
+    - "{{ slurm_srun_ports.start }}-{{ slurm_srun_ports.end }}/tcp"
+  become: true
+
+- name: "Start slurm controller nodes"
+  ansible.builtin.service:
+    name: slurmctld
+    state: started
+    enabled: true
+  become: true
+  when: inventory_hostname in groups['slurm_controller']
+
+- name: "Start slurm compute nodes"
+  ansible.builtin.service:
+    name: slurmd
+    state: started
+    enabled: true
+  become: true
+  when: inventory_hostname in groups['slurm_compute']

@@ -1,0 +1,25 @@
+---
+- name: "Force fact gather"
+  ansible.builtin.gather_facts:
+
+- name: "Detect distro"
+  ansible.builtin.set_fact:
+    detected_distro: "{{ ansible_distribution | lower }}"
+    detected_major_version: "{{ ansible_distribution_major_version }}"
+
+- name: "Check distro"
+  ansible.builtin.assert:
+    that:
+      - detected_distro in slurm_allowed_distros
+    fail_msg: " The detected linux distribution '{{ detected_distro }}' is not available for this role."
+
+- name: "Check major OS version"
+  ansible.builtin.assert:
+    that:
+      - detected_major_version in slurm_allowed_distros[detected_distro]
+    fail_msg: "{{ ansible_distribution }} with version {{ ansible_distribution_major_version }} is not available for this role."
+
+- name: "Check package manager is {{ package_manager }}"
+  ansible.builtin.assert:
+    that:
+      - ansible_pkg_mgr is match("dnf.*")

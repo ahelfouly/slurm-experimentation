@@ -1,0 +1,12 @@
+---
+# tasks file for slurm
+- name: "Check OS compatibility"
+  ansible.builtin.include_tasks: check_os.yml
+- name: "Create Slurm users"
+  ansible.builtin.include_tasks: create_slurm_user.yml
+- name: "Install Munge"
+  ansible.builtin.include_tasks: install_munge.yml
+- name: "Munge and Slurm users"
+  ansible.builtin.include_tasks: check_users.yml
+- name: "Install Slurm"
+  ansible.builtin.include_tasks: install_slurm.yml

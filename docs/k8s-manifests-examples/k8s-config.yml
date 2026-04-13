@@ -1,0 +1,51 @@
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: '192.168.55.11'
+  bindPort: 6443
+controlPlaneEndpoint: '192.168.55.10:6443'
+nodeRegistration:
+  criSocket: unix:///var/run/containerd/containerd.sock
+  imagePullPolicy: IfNotPresent
+  imagePullSerial: true
+  name: ctrl01
+  kubeletExtraArgs:
+    - name: node-ip
+      value: "192.168.55.11"
+timeouts:
+  controlPlaneComponentHealthCheck: 4m0s
+  discovery: 5m0s
+  etcdAPICall: 2m0s
+  kubeletHealthCheck: 4m0s
+  kubernetesAPICall: 1m0s
+  tlsBootstrap: 5m0s
+  upgradeManifests: 5m0s
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+caCertificateValidityPeriod: 87600h0m0s
+certificateValidityPeriod: 8760h0m0s
+certificatesDir: /etc/kubernetes/pki
+clusterName: kubernetes
+controllerManager: 
+  extraArgs:
+    - name: allocate-node-cidrs
+      value: 'true'
+    - name: node-cidr-mask-size
+      value: '28'
+encryptionAlgorithm: RSA-2048
+etcd:
+  local:
+    dataDir: /var/lib/etcd
+imageRepository: registry.k8s.io
+kubernetesVersion: 1.35.0
+networking:
+  dnsDomain: cluster.local
+  serviceSubnet: '10.97.0.0/12'
+  podSubnet: '10.245.0.0/16'
+proxy:
+  disabled: true
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: KubeletConfiguration
+cgroupDriver: systemd

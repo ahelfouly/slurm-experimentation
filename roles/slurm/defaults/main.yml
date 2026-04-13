@@ -1,0 +1,10 @@
+---
+# defaults file for slurm
+slurm_munge_version: "0.5.18"
+slurm_package_version: "25.11.3"
+slurm_package_manager: "dnf"
+slurm_gid: "1500"
+slurm_uid: "1500"
+slurm_srun_ports:
+  start: "60001"
+  end: "63000"

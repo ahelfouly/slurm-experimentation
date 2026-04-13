@@ -1,0 +1,22 @@
+---
+- name: "Fetch passwd slurm"
+  ansible.builtin.getent:
+    database: "passwd"
+
+- name: Assert slurm user is identical across all hosts
+  ansible.builtin.assert:
+    that:
+      - hostvars[inventory_hostname]['ansible_facts']['getent_passwd']['slurm'] == hostvars[slurm_controller]['ansible_facts']['getent_passwd']['slurm']
+    fail_msg: "slurm user on {{ inventory_hostname }} does not match controller {{ slurm_controller }}"
+  when: inventory_hostname != slurm_controller
+  vars:
+    slurm_controller: "{{ groups['slurm_controller'][0] }}"
+
+- name: "Assert munge user is identical across all hosts"
+  ansible.builtin.assert:
+    that:
+      - hostvars[inventory_hostname]['ansible_facts']['getent_passwd']['munge'] == hostvars[slurm_controller]['ansible_facts']['getent_passwd']['munge']
+    fail_msg: "slurm user on {{ inventory_hostname }} does not match controller {{ slurm_controller }}"
+  when: inventory_hostname != slurm_controller
+  vars:
+    slurm_controller: "{{ groups['slurm_controller'][0] }}"

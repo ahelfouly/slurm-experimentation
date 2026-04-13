@@ -1,0 +1,96 @@
+---
+- name: "Update openssh packages"
+  ansible.builtin.dnf:
+    name: "openssh"
+    state: latest
+  become: true
+
+- name: "Download munge package on controller"
+  ansible.builtin.get_url:
+    url: "{{ slurm_munge_url }}"
+    dest: "~/munge-{{ slurm_munge_version }}.tar.xz"
+    mode: "0600"
+  delegate_to: localhost
+
+- name: "Copy package to nodes"
+  ansible.builtin.copy:
+    src: "~/munge-{{ slurm_munge_version }}.tar.xz"
+    dest: "{{ slurm_home }}/munge-{{ slurm_munge_version }}.tar.xz"
+    mode: "0600"
+
+- name: "Install rpm build packages"
+  ansible.builtin.dnf:
+    name: "{{ slurm_rpm_dependencies }}"
+    enablerepo:
+      - "crb"
+  become: true
+
+- name: "Build munge package"
+  ansible.builtin.command:
+    cmd: "rpmbuild -tb --without=check {{ slurm_home }}/munge-{{ slurm_munge_version }}.tar.xz"
+  changed_when: false
+  register: slurm_munge_build
+  failed_when: slurm_munge_build.rc != 0
+
+- name: "Find munge RPMs"
+  ansible.builtin.find:
+    paths: "{{ slurm_home }}/rpmbuild/RPMS/{{ ansible_architecture }}"
+    patterns: "munge-(|libs-|devel-){{ slurm_munge_version }}.*"
+    use_regex: true
+  register: slurm_munge_rpms
+
+- name: "Install munge from RPMs"
+  ansible.builtin.dnf:
+    name: "{{ slurm_munge_rpms.files | map(attribute='path') | list }}"
+    state: present
+    disable_gpg_check: true
+  become: true
+
+- name: "Create munge key"
+  ansible.builtin.command:
+    cmd: "/usr/sbin/mungekey -v"
+    creates: "/etc/munge/munge.key"
+  become: true
+  become_user: munge
+  changed_when: false
+  register: slurm_munge_key_creation
+  failed_when: slurm_munge_key_creation.rc != 0
+  when: inventory_hostname == slurm_controller
+  vars:
+    slurm_controller: "{{ groups['slurm_controller'][0] }}"
+
+- name: "Fetch munge key"
+  ansible.builtin.fetch:
+    src: "/etc/munge/munge.key"
+    dest: "/tmp/munge.key"
+    flat: true
+  become: true
+  when: inventory_hostname == slurm_controller
+  vars:
+    slurm_controller: "{{ groups['slurm_controller'][0] }}"
+
+- name: "Distribute munge key"
+  ansible.builtin.copy:
+    src: "/tmp/munge.key"
+    dest: "/etc/munge/munge.key"
+    mode: "0600"
+    owner: "munge"
+    group: "munge"
+  when: inventory_hostname != slurm_controller
+  become: true
+  vars:
+    slurm_controller: "{{ groups['slurm_controller'][0] }}"
+
+- name: "Clean-up munge key from controller"
+  ansible.builtin.file:
+    path: /tmp/munge.key
+    state: absent
+  delegate_to: localhost
+  run_once: true
+
+- name: "Start Munge service"
+  ansible.builtin.service:
+    name: munge
+    state: started
+    enabled: true
+  become: true
